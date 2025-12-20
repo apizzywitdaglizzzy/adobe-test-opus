@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --editor-bg: #1a1a1a;
+  --editor-surface: #252525;
+  --editor-panel: #2d2d2d;
+  --editor-border: #3d3d3d;
+  --editor-accent: #0078d4;
+  --editor-text: #ffffff;
+  --editor-text-secondary: #a0a0a0;
+  --track-video: #4a9eff;
+  --track-audio: #4caf50;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #555 #2d2d2d;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #555;
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #666;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.clip {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.clip:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.clip.selected {
+  box-shadow: 0 0 0 2px var(--editor-accent), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.clip.dragging {
+  opacity: 0.8;
+  transform: scale(1.02);
+  z-index: 1000;
+}
+
+.timeline-track {
+  position: relative;
+  min-height: 60px;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  background: #ff4444;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -6px;
+  width: 14px;
+  height: 14px;
+  background: #ff4444;
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+}
+
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+.resize-handle-left {
+  left: 0;
+}
+
+.resize-handle-right {
+  right: 0;
+}
+
+.waveform-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.keyframe {
+  width: 10px;
+  height: 10px;
+  background: #ffcc00;
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+.keyframe:hover {
+  background: #ffdd44;
+}
+
+.keyframe.selected {
+  background: #ff9900;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.recording-indicator {
+  animation: pulse 1s infinite;
+}
+
+.panel-resize-handle {
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.panel-resize-handle:hover {
+  background: var(--editor-accent);
+}
+
+.tooltip {
+  position: absolute;
+  background: #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.context-menu {
+  position: fixed;
+  background: #2d2d2d;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  min-width: 180px;
+}
+
+.context-menu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-item:hover {
+  background: #3d3d3d;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background: #3d3d3d;
+  margin: 4px 0;
+}
