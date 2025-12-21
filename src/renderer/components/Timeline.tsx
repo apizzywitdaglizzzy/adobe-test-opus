@@ -42,6 +42,7 @@ const Timeline: React.FC<TimelineProps> = ({
   mediaItems,
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState<'playhead' | 'clip' | 'resize-left' | 'resize-right' | null>(null);
   const [dragClipId, setDragClipId] = useState<string | null>(null);
@@ -362,8 +363,6 @@ const Timeline: React.FC<TimelineProps> = ({
 
   const videoTracks = sequence.tracks.filter((t) => t.type === 'video');
   const audioTracks = sequence.tracks.filter((t) => t.type === 'audio');
-
-  const tracksContainerRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col h-full bg-editor-timeline relative overflow-hidden" onWheel={handleWheel}>
