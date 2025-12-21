@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Sequence, MediaItem } from '../../types';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Sequence, MediaItem, Clip } from '../../types';
 
 interface PreviewProps {
   sequence: Sequence | null;
@@ -28,14 +28,17 @@ const Preview: React.FC<PreviewProps> = ({
   onGoToEnd,
   mediaItems,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const [playbackRate, setPlaybackRate] = useState(1);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [activeClip, setActiveClip] = useState<Clip | null>(null);
+  const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
+  const lastSeekTimeRef = useRef<number>(0);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -44,11 +47,12 @@ const Preview: React.FC<PreviewProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`;
   };
 
+  // Update preview size on resize
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current && sequence) {
         const containerWidth = containerRef.current.clientWidth;
-        const containerHeight = containerRef.current.clientHeight - 80; // Account for controls
+        const containerHeight = containerRef.current.clientHeight - 80;
         const aspectRatio = sequence.width / sequence.height;
 
         let width = containerWidth;
@@ -68,48 +72,82 @@ const Preview: React.FC<PreviewProps> = ({
     return () => window.removeEventListener('resize', updateSize);
   }, [sequence]);
 
+  // Find active clip at current time
   useEffect(() => {
-    if (!canvasRef.current || !sequence) return;
+    if (!sequence) {
+      setActiveClip(null);
+      setActiveMedia(null);
+      return;
+    }
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear canvas
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Render current frame
     const videoTracks = sequence.tracks.filter((t) => t.type === 'video');
 
-    // Find active clips at current time
     for (const track of videoTracks) {
       for (const clip of track.clips) {
         if (!clip.enabled) continue;
         if (currentTime >= clip.startTime && currentTime < clip.startTime + clip.duration) {
           const media = mediaItems.find((m) => m.id === clip.mediaId);
-          if (media) {
-            // Draw placeholder for now
-            ctx.fillStyle = clip.color || '#4a9eff';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Draw clip name
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '24px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(clip.name, canvas.width / 2, canvas.height / 2);
-
-            // Draw timecode
-            const clipTime = (currentTime - clip.startTime) * clip.speed + clip.inPoint;
-            ctx.font = '14px monospace';
-            ctx.fillText(formatTime(clipTime), canvas.width / 2, canvas.height / 2 + 40);
+          if (media && media.type === 'video') {
+            if (activeClip?.id !== clip.id) {
+              setActiveClip(clip);
+              setActiveMedia(media);
+            }
+            return;
+          } else if (media && media.type === 'image') {
+            setActiveClip(clip);
+            setActiveMedia(media);
+            return;
           }
-          break;
         }
       }
     }
+
+    setActiveClip(null);
+    setActiveMedia(null);
   }, [currentTime, sequence, mediaItems]);
+
+  // Sync video element with timeline
+  useEffect(() => {
+    if (!videoRef.current || !activeClip || !activeMedia || activeMedia.type !== 'video') return;
+
+    const video = videoRef.current;
+    const clipTime = (currentTime - activeClip.startTime) * activeClip.speed + activeClip.inPoint;
+
+    // Only seek if the difference is significant (avoid constant seeking during playback)
+    if (Math.abs(video.currentTime - clipTime) > 0.1 || !isPlaying) {
+      if (lastSeekTimeRef.current !== clipTime) {
+        video.currentTime = clipTime;
+        lastSeekTimeRef.current = clipTime;
+      }
+    }
+  }, [currentTime, activeClip, activeMedia, isPlaying]);
+
+  // Handle play/pause
+  useEffect(() => {
+    if (!videoRef.current || !activeMedia || activeMedia.type !== 'video') return;
+
+    const video = videoRef.current;
+
+    if (isPlaying) {
+      video.play().catch(() => {
+        // Autoplay may be blocked
+      });
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, activeMedia]);
+
+  // Handle volume
+  useEffect(() => {
+    if (!videoRef.current) return;
+    videoRef.current.volume = isMuted ? 0 : volume;
+  }, [volume, isMuted]);
+
+  // Handle playback rate
+  useEffect(() => {
+    if (!videoRef.current) return;
+    videoRef.current.playbackRate = playbackRate;
+  }, [playbackRate]);
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -154,18 +192,51 @@ const Preview: React.FC<PreviewProps> = ({
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => !isPlaying && setShowControls(true)}
     >
-      {/* Preview canvas */}
-      <div className="flex-1 flex items-center justify-center overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          width={sequence.width}
-          height={sequence.height}
-          style={{
-            width: previewSize.width,
-            height: previewSize.height,
-          }}
-          className="bg-black shadow-2xl"
-        />
+      {/* Preview area */}
+      <div className="flex-1 flex items-center justify-center overflow-hidden bg-black">
+        {activeMedia && activeMedia.type === 'video' ? (
+          <video
+            ref={videoRef}
+            src={`file://${activeMedia.path}`}
+            style={{
+              width: previewSize.width || '100%',
+              height: previewSize.height || '100%',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+            }}
+            muted={isMuted}
+            playsInline
+          />
+        ) : activeMedia && activeMedia.type === 'image' ? (
+          <img
+            src={`file://${activeMedia.path}`}
+            style={{
+              width: previewSize.width || '100%',
+              height: previewSize.height || '100%',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+            }}
+            alt={activeMedia.name}
+          />
+        ) : (
+          <div
+            className="flex items-center justify-center text-editor-text-secondary"
+            style={{
+              width: previewSize.width || '100%',
+              height: previewSize.height || '100%',
+              backgroundColor: '#000',
+            }}
+          >
+            <div className="text-center">
+              <svg className="w-12 h-12 mx-auto mb-2 opacity-30" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z" />
+              </svg>
+              <p className="text-sm opacity-50">No clip at playhead</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -204,7 +275,7 @@ const Preview: React.FC<PreviewProps> = ({
               title="Previous Frame (←)"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" />
               </svg>
             </button>
 
@@ -240,7 +311,7 @@ const Preview: React.FC<PreviewProps> = ({
               title="Next Frame (→)"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />
               </svg>
             </button>
 
