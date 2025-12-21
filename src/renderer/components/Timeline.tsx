@@ -363,8 +363,10 @@ const Timeline: React.FC<TimelineProps> = ({
   const videoTracks = sequence.tracks.filter((t) => t.type === 'video');
   const audioTracks = sequence.tracks.filter((t) => t.type === 'audio');
 
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="flex flex-col h-full bg-editor-timeline" onWheel={handleWheel}>
+    <div className="flex flex-col h-full bg-editor-timeline relative overflow-hidden" onWheel={handleWheel}>
       {/* Timeline header with time ruler */}
       <div className="flex border-b border-editor-border h-6">
         <div
@@ -399,8 +401,12 @@ const Timeline: React.FC<TimelineProps> = ({
       </div>
 
       {/* Tracks container */}
-      <div className="flex-1 overflow-auto" onScroll={(e) => setScrollLeft((e.target as HTMLElement).scrollLeft)}>
-        <div style={{ width: timelineWidth + TRACK_HEADER_WIDTH }}>
+      <div
+        ref={tracksContainerRef}
+        className="flex-1 overflow-auto"
+        onScroll={(e) => setScrollLeft((e.target as HTMLElement).scrollLeft)}
+      >
+        <div style={{ width: timelineWidth + TRACK_HEADER_WIDTH, position: 'relative' }}>
           {/* Video tracks */}
           {videoTracks.map((track, index) => renderTrack(track, index))}
 
@@ -438,36 +444,63 @@ const Timeline: React.FC<TimelineProps> = ({
             </div>
             <div className="flex-1 bg-editor-timeline/50" />
           </div>
-        </div>
 
-        {/* Playhead */}
-        <div
-          className="playhead absolute top-0 bottom-0 pointer-events-none"
-          style={{
-            left: TRACK_HEADER_WIDTH + timeToPixels(currentTime) - scrollLeft,
-            height: '100%',
-          }}
-        >
+          {/* Playhead - inside the scrollable content */}
           <div
-            className="absolute top-0 w-3 h-3 bg-red-500 cursor-pointer pointer-events-auto transform -translate-x-1/2"
-            style={{ clipPath: 'polygon(50% 100%, 0 0, 100% 0)' }}
-            onMouseDown={handlePlayheadMouseDown}
-          />
-        </div>
+            className="pointer-events-none"
+            style={{
+              position: 'absolute',
+              left: TRACK_HEADER_WIDTH + timeToPixels(currentTime),
+              top: 0,
+              bottom: 0,
+              width: '2px',
+              background: '#ff4444',
+              zIndex: 50,
+            }}
+          >
+            <div
+              className="cursor-pointer pointer-events-auto"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: '-6px',
+                width: '14px',
+                height: '14px',
+                background: '#ff4444',
+                clipPath: 'polygon(50% 100%, 0 0, 100% 0)',
+              }}
+              onMouseDown={handlePlayheadMouseDown}
+            />
+          </div>
 
-        {/* In/Out points */}
-        {sequence.inPoint !== null && (
-          <div
-            className="absolute top-6 bottom-0 w-0.5 bg-yellow-500 pointer-events-none"
-            style={{ left: TRACK_HEADER_WIDTH + timeToPixels(sequence.inPoint) - scrollLeft }}
-          />
-        )}
-        {sequence.outPoint !== null && (
-          <div
-            className="absolute top-6 bottom-0 w-0.5 bg-yellow-500 pointer-events-none"
-            style={{ left: TRACK_HEADER_WIDTH + timeToPixels(sequence.outPoint) - scrollLeft }}
-          />
-        )}
+          {/* In/Out points */}
+          {sequence.inPoint !== null && (
+            <div
+              className="pointer-events-none"
+              style={{
+                position: 'absolute',
+                left: TRACK_HEADER_WIDTH + timeToPixels(sequence.inPoint),
+                top: 0,
+                bottom: 0,
+                width: '2px',
+                background: '#eab308',
+              }}
+            />
+          )}
+          {sequence.outPoint !== null && (
+            <div
+              className="pointer-events-none"
+              style={{
+                position: 'absolute',
+                left: TRACK_HEADER_WIDTH + timeToPixels(sequence.outPoint),
+                top: 0,
+                bottom: 0,
+                width: '2px',
+                background: '#eab308',
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Timeline footer with zoom slider */}

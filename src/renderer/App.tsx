@@ -277,11 +277,11 @@ const App: React.FC = () => {
     setProject(updatedProject);
   };
 
-  const handleImportMedia = async (paths: string[]) => {
+  const handleImportMedia = useCallback(async (paths: string[]) => {
     const newMedia: MediaItem[] = [];
 
-    for (const path of paths) {
-      const ext = path.split('.').pop()?.toLowerCase() || '';
+    for (const filePath of paths) {
+      const ext = filePath.split('.').pop()?.toLowerCase() || '';
       let type: MediaItem['type'] = 'video';
 
       if (['mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a'].includes(ext)) {
@@ -290,13 +290,13 @@ const App: React.FC = () => {
         type = 'image';
       }
 
-      const fileInfo = await ipcRenderer.invoke('get-file-info', path);
+      const fileInfo = await ipcRenderer.invoke('get-file-info', filePath);
 
       const media: MediaItem = {
         id: uuidv4(),
-        name: path.split('/').pop() || path.split('\\').pop() || 'Untitled',
+        name: filePath.split('/').pop() || filePath.split('\\').pop() || 'Untitled',
         type,
-        path,
+        path: filePath,
         duration: type === 'image' ? 5 : 10, // Default duration, would be read from file
         width: 1920,
         height: 1080,
@@ -317,7 +317,7 @@ const App: React.FC = () => {
           : bin
       ),
     }));
-  };
+  }, []);
 
   const togglePlayback = useCallback(() => {
     setPlayback((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
@@ -522,6 +522,23 @@ const App: React.FC = () => {
     setPlayback((prev) => ({ ...prev, currentTime: time }));
   }, []);
 
+  const handleImportMediaClick = useCallback(async () => {
+    const result = await ipcRenderer.invoke('show-open-dialog', {
+      title: 'Import Media',
+      filters: [
+        { name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv'] },
+        { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a'] },
+        { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] },
+        { name: 'All Media', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (!result.canceled && result.filePaths?.length > 0) {
+      handleImportMedia(result.filePaths);
+    }
+  }, [handleImportMedia]);
+
   const handleClipMove = useCallback(
     (clipId: string, newStartTime: number, newTrackId: string) => {
       if (!activeSequence) return;
@@ -638,7 +655,7 @@ const App: React.FC = () => {
               selectedMedia={selectedMedia}
               onSelectMedia={setSelectedMedia}
               onAddToTimeline={handleAddClipToTimeline}
-              onImportMedia={() => ipcRenderer.send('menu-import')}
+              onImportMedia={handleImportMediaClick}
             />
           </div>
           <div
