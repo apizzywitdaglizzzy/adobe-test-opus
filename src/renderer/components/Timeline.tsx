@@ -15,7 +15,7 @@ interface TimelineProps {
   onClipMove: (clipId: string, newStartTime: number, newTrackId: string) => void;
   onClipResize: (clipId: string, newStartTime: number, newDuration: number, edge: 'left' | 'right') => void;
   onZoomChange: (zoom: number) => void;
-  onAddTrack: (type: 'video' | 'audio') => void;
+  onAddTrack: (type: 'video' | 'audio' | 'subtitle') => void;
   onSplitClip: () => void;
   mediaItems: MediaItem[];
 }
@@ -211,7 +211,7 @@ const Timeline: React.FC<TimelineProps> = ({
         style={{
           left: x,
           width: Math.max(width, 20),
-          backgroundColor: clip.color || (clip.type === 'video' ? '#4a9eff' : '#4caf50'),
+          backgroundColor: clip.color || (clip.type === 'video' ? '#4a9eff' : clip.type === 'audio' ? '#4caf50' : '#f59e0b'),
         }}
         onMouseDown={(e) => handleClipMouseDown(e, clip, 'move')}
       >
@@ -251,6 +251,15 @@ const Timeline: React.FC<TimelineProps> = ({
                   );
                 })}
               </svg>
+            </div>
+          )}
+
+          {/* Subtitle indicator */}
+          {clip.type === 'subtitle' && clip.subtitles && (
+            <div className="absolute inset-0 flex items-center px-1 opacity-70 overflow-hidden">
+              <span className="text-xs truncate">
+                {clip.subtitles.length} subtitle{clip.subtitles.length !== 1 ? 's' : ''}
+              </span>
             </div>
           )}
 
@@ -337,6 +346,10 @@ const Timeline: React.FC<TimelineProps> = ({
               />
             </div>
           )}
+
+          {track.type === 'subtitle' && (
+            <div className="text-xs text-amber-500">CC</div>
+          )}
         </div>
 
         {/* Track content */}
@@ -363,6 +376,7 @@ const Timeline: React.FC<TimelineProps> = ({
 
   const videoTracks = sequence.tracks.filter((t) => t.type === 'video');
   const audioTracks = sequence.tracks.filter((t) => t.type === 'audio');
+  const subtitleTracks = sequence.tracks.filter((t) => t.type === 'subtitle');
 
   return (
     <div className="flex flex-col h-full bg-editor-timeline relative overflow-hidden" onWheel={handleWheel}>
@@ -439,6 +453,25 @@ const Timeline: React.FC<TimelineProps> = ({
                 onClick={() => onAddTrack('audio')}
               >
                 + Add Audio Track
+              </button>
+            </div>
+            <div className="flex-1 bg-editor-timeline/50" />
+          </div>
+
+          {/* Subtitle tracks */}
+          {subtitleTracks.map((track, index) => renderTrack(track, index))}
+
+          {/* Add subtitle track button */}
+          <div className="flex border-b border-editor-border h-8">
+            <div
+              className="flex-shrink-0 bg-editor-surface border-r border-editor-border flex items-center justify-center"
+              style={{ width: TRACK_HEADER_WIDTH }}
+            >
+              <button
+                className="text-xs text-editor-text-secondary hover:text-editor-text flex items-center gap-1"
+                onClick={() => onAddTrack('subtitle')}
+              >
+                + Add Subtitle Track
               </button>
             </div>
             <div className="flex-1 bg-editor-timeline/50" />

@@ -109,7 +109,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
           <div className="space-y-2">
             <h3 className="text-xs font-medium text-editor-text-secondary uppercase">Audio</h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
+              {/* Volume (linear) */}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-editor-text-secondary">Volume</span>
                 <div className="flex items-center gap-2">
@@ -129,6 +130,92 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* Gain (dB) */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-editor-text-secondary">Gain (dB)</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="-60"
+                    max="12"
+                    step="0.5"
+                    value={selectedClip.gain ?? 0}
+                    onChange={(e) => {
+                      const gainDb = parseFloat(e.target.value);
+                      // Convert dB to linear: linear = 10^(dB/20)
+                      const linearVolume = gainDb <= -60 ? 0 : Math.pow(10, gainDb / 20);
+                      onClipUpdate(selectedClip.id, {
+                        gain: gainDb,
+                        volume: linearVolume
+                      });
+                    }}
+                    className="w-16"
+                  />
+                  <input
+                    type="number"
+                    min="-60"
+                    max="12"
+                    step="0.5"
+                    value={selectedClip.gain ?? 0}
+                    onChange={(e) => {
+                      const gainDb = parseFloat(e.target.value) || 0;
+                      const clampedGain = Math.max(-60, Math.min(12, gainDb));
+                      const linearVolume = clampedGain <= -60 ? 0 : Math.pow(10, clampedGain / 20);
+                      onClipUpdate(selectedClip.id, {
+                        gain: clampedGain,
+                        volume: linearVolume
+                      });
+                    }}
+                    className="w-14 h-6 px-1 bg-editor-panel border border-editor-border rounded text-right text-sm focus:outline-none focus:border-editor-accent"
+                  />
+                  <span className="text-xs text-editor-text-secondary">dB</span>
+                </div>
+              </div>
+
+              {/* Audio Level Meter Visual */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-editor-text-secondary">Level</span>
+                  <span className="text-xs text-editor-text-secondary">
+                    {(selectedClip.gain ?? 0) > 0 ? '+' : ''}{(selectedClip.gain ?? 0).toFixed(1)} dB
+                  </span>
+                </div>
+                <div className="h-2 bg-editor-bg rounded overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-150"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, ((selectedClip.gain ?? 0) + 60) / 72 * 100))}%`,
+                      background: (selectedClip.gain ?? 0) > 0
+                        ? 'linear-gradient(to right, #22c55e, #eab308, #ef4444)'
+                        : 'linear-gradient(to right, #22c55e 0%, #22c55e 100%)'
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-editor-text-secondary">
+                  <span>-60</span>
+                  <span>-12</span>
+                  <span>0</span>
+                  <span>+12</span>
+                </div>
+              </div>
+
+              {/* Mute toggle */}
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-sm text-editor-text-secondary">Mute Audio</span>
+                <input
+                  type="checkbox"
+                  checked={selectedClip.volume === 0}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      onClipUpdate(selectedClip.id, { volume: 0, gain: -60 });
+                    } else {
+                      onClipUpdate(selectedClip.id, { volume: 1, gain: 0 });
+                    }
+                  }}
+                  className="w-4 h-4"
+                />
+              </label>
             </div>
           </div>
         )}

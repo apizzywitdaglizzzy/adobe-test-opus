@@ -7,9 +7,10 @@ import Preview from './components/Preview';
 import Timeline from './components/Timeline';
 import EffectsPanel from './components/EffectsPanel';
 import PropertiesPanel from './components/PropertiesPanel';
+import SubtitlePanel from './components/SubtitlePanel';
 import ExportDialog from './components/ExportDialog';
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog';
-import { Project, Sequence, MediaItem, Track, Clip, PlaybackState, EditorState } from '../types';
+import { Project, Sequence, MediaItem, Track, Clip, PlaybackState, EditorState, SubtitleEntry } from '../types';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -100,6 +101,7 @@ const App: React.FC = () => {
   const [leftPanelWidth, setLeftPanelWidth] = useState(300);
   const [rightPanelWidth, setRightPanelWidth] = useState(300);
   const [timelineHeight, setTimelineHeight] = useState(300);
+  const [leftPanelTab, setLeftPanelTab] = useState<'media' | 'subtitles'>('media');
 
   const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -390,6 +392,7 @@ const App: React.FC = () => {
               ...clip,
               duration: firstHalfDuration,
               outPoint: clip.inPoint + firstHalfDuration * clip.speed,
+              gain: clip.gain ?? 0,
             });
 
             newClips.push({
@@ -398,6 +401,8 @@ const App: React.FC = () => {
               startTime: splitPoint,
               duration: secondHalfDuration,
               inPoint: clip.inPoint + firstHalfDuration * clip.speed,
+              gain: clip.gain ?? 0,
+              linkedClipId: undefined, // Break link on split
             });
           } else {
             newClips.push(clip);
@@ -427,15 +432,16 @@ const App: React.FC = () => {
   }, [activeSequence, selectedClips]);
 
   const addTrack = useCallback(
-    (type: 'video' | 'audio') => {
+    (type: 'video' | 'audio' | 'subtitle') => {
       if (!activeSequence) return;
 
       const trackCount = activeSequence.tracks.filter((t) => t.type === type).length + 1;
+      const trackName = type === 'video' ? 'Video' : type === 'audio' ? 'Audio' : 'Subtitle';
       const newTrack: Track = {
         id: uuidv4(),
-        name: `${type === 'video' ? 'Video' : 'Audio'} ${trackCount}`,
+        name: `${trackName} ${trackCount}`,
         type,
-        height: type === 'video' ? 80 : 60,
+        height: type === 'video' ? 80 : type === 'audio' ? 60 : 40,
         muted: false,
         solo: false,
         locked: false,
@@ -445,13 +451,21 @@ const App: React.FC = () => {
         clips: [],
       };
 
-      const insertIndex =
-        type === 'video'
-          ? 0
-          : activeSequence.tracks.findIndex((t) => t.type === 'audio');
+      let insertIndex: number;
+      if (type === 'video') {
+        insertIndex = 0;
+      } else if (type === 'audio') {
+        insertIndex = activeSequence.tracks.findIndex((t) => t.type === 'audio');
+        if (insertIndex === -1) {
+          insertIndex = activeSequence.tracks.filter((t) => t.type === 'video').length;
+        }
+      } else {
+        // Subtitle tracks go at the end
+        insertIndex = activeSequence.tracks.length;
+      }
 
       const updatedTracks = [...activeSequence.tracks];
-      updatedTracks.splice(insertIndex === -1 ? updatedTracks.length : insertIndex, 0, newTrack);
+      updatedTracks.splice(insertIndex, 0, newTrack);
 
       setActiveSequence({ ...activeSequence, tracks: updatedTracks });
     },
@@ -462,6 +476,95 @@ const App: React.FC = () => {
     (mediaItem: MediaItem, trackId?: string) => {
       if (!activeSequence) return;
 
+      // For video files, we split into separate video and audio clips
+      if (mediaItem.type === 'video') {
+        const videoTrack = activeSequence.tracks.find((t) => t.type === 'video');
+        const audioTrack = activeSequence.tracks.find((t) => t.type === 'audio');
+
+        if (!videoTrack || !audioTrack) {
+          addTrack(!videoTrack ? 'video' : 'audio');
+          return;
+        }
+
+        // Calculate start time based on latest clip end in video track
+        const lastVideoClipEnd = videoTrack.clips.reduce(
+          (max, clip) => Math.max(max, clip.startTime + clip.duration),
+          0
+        );
+
+        const videoClipId = uuidv4();
+        const audioClipId = uuidv4();
+
+        // Create video clip
+        const videoClip: Clip = {
+          id: videoClipId,
+          mediaId: mediaItem.id,
+          trackId: videoTrack.id,
+          name: mediaItem.name,
+          type: 'video',
+          startTime: lastVideoClipEnd,
+          duration: mediaItem.duration,
+          inPoint: 0,
+          outPoint: mediaItem.duration,
+          speed: 1,
+          volume: 1,
+          gain: 0,
+          opacity: 1,
+          effects: [],
+          transitions: {},
+          locked: false,
+          enabled: true,
+          color: '#4a9eff',
+          linkedClipId: audioClipId, // Link to audio clip
+        };
+
+        // Create linked audio clip
+        const audioClip: Clip = {
+          id: audioClipId,
+          mediaId: mediaItem.id,
+          trackId: audioTrack.id,
+          name: `${mediaItem.name} (Audio)`,
+          type: 'audio',
+          startTime: lastVideoClipEnd, // Same start time as video
+          duration: mediaItem.duration,
+          inPoint: 0,
+          outPoint: mediaItem.duration,
+          speed: 1,
+          volume: 1,
+          gain: 0,
+          opacity: 1,
+          effects: [],
+          transitions: {},
+          locked: false,
+          enabled: true,
+          color: '#4caf50',
+          linkedClipId: videoClipId, // Link to video clip
+        };
+
+        const updatedTracks = activeSequence.tracks.map((track) => {
+          if (track.id === videoTrack.id) {
+            return { ...track, clips: [...track.clips, videoClip] };
+          }
+          if (track.id === audioTrack.id) {
+            return { ...track, clips: [...track.clips, audioClip] };
+          }
+          return track;
+        });
+
+        const newDuration = Math.max(
+          activeSequence.duration,
+          lastVideoClipEnd + mediaItem.duration
+        );
+
+        setActiveSequence({
+          ...activeSequence,
+          tracks: updatedTracks,
+          duration: newDuration,
+        });
+        return;
+      }
+
+      // For audio and image files, add to appropriate track
       let targetTrack = trackId
         ? activeSequence.tracks.find((t) => t.id === trackId)
         : activeSequence.tracks.find(
@@ -490,12 +593,13 @@ const App: React.FC = () => {
         outPoint: mediaItem.duration,
         speed: 1,
         volume: 1,
+        gain: 0,
         opacity: 1,
         effects: [],
         transitions: {},
         locked: false,
         enabled: true,
-        color: mediaItem.type === 'video' ? '#4a9eff' : mediaItem.type === 'audio' ? '#4caf50' : '#ff9800',
+        color: mediaItem.type === 'audio' ? '#4caf50' : '#ff9800',
       };
 
       const updatedTracks = activeSequence.tracks.map((track) =>
@@ -521,6 +625,64 @@ const App: React.FC = () => {
   const handleTimeChange = useCallback((time: number) => {
     setPlayback((prev) => ({ ...prev, currentTime: time }));
   }, []);
+
+  const handleCreateSubtitleClip = useCallback(
+    (subtitles: SubtitleEntry[], duration: number) => {
+      if (!activeSequence) return;
+
+      // Find or create subtitle track
+      let subtitleTrack = activeSequence.tracks.find((t) => t.type === 'subtitle');
+      if (!subtitleTrack) {
+        addTrack('subtitle');
+        return; // Track will be created, user can try again
+      }
+
+      const lastClipEnd = subtitleTrack.clips.reduce(
+        (max, clip) => Math.max(max, clip.startTime + clip.duration),
+        0
+      );
+
+      const subtitleClip: Clip = {
+        id: uuidv4(),
+        mediaId: '', // No associated media
+        trackId: subtitleTrack.id,
+        name: 'Subtitles',
+        type: 'subtitle',
+        startTime: lastClipEnd,
+        duration: duration,
+        inPoint: 0,
+        outPoint: duration,
+        speed: 1,
+        volume: 1,
+        gain: 0,
+        opacity: 1,
+        effects: [],
+        transitions: {},
+        locked: false,
+        enabled: true,
+        color: '#f59e0b',
+        subtitles: subtitles,
+      };
+
+      const updatedTracks = activeSequence.tracks.map((track) =>
+        track.id === subtitleTrack!.id
+          ? { ...track, clips: [...track.clips, subtitleClip] }
+          : track
+      );
+
+      const newDuration = Math.max(
+        activeSequence.duration,
+        subtitleClip.startTime + subtitleClip.duration
+      );
+
+      setActiveSequence({
+        ...activeSequence,
+        tracks: updatedTracks,
+        duration: newDuration,
+      });
+    },
+    [activeSequence, addTrack]
+  );
 
   const handleImportMediaClick = useCallback(async () => {
     const result = await ipcRenderer.invoke('show-open-dialog', {
@@ -643,20 +805,52 @@ const App: React.FC = () => {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Panel - Media Browser & Effects */}
+        {/* Left Panel - Media Browser / Subtitles & Effects */}
         <div
           className="flex flex-col bg-editor-surface border-r border-editor-border"
           style={{ width: leftPanelWidth }}
         >
+          {/* Tab selector */}
+          <div className="flex border-b border-editor-border">
+            <button
+              className={`flex-1 px-3 py-2 text-xs font-medium ${
+                leftPanelTab === 'media'
+                  ? 'text-editor-accent border-b-2 border-editor-accent bg-editor-bg'
+                  : 'text-editor-text-secondary hover:text-editor-text'
+              }`}
+              onClick={() => setLeftPanelTab('media')}
+            >
+              Media
+            </button>
+            <button
+              className={`flex-1 px-3 py-2 text-xs font-medium ${
+                leftPanelTab === 'subtitles'
+                  ? 'text-editor-accent border-b-2 border-editor-accent bg-editor-bg'
+                  : 'text-editor-text-secondary hover:text-editor-text'
+              }`}
+              onClick={() => setLeftPanelTab('subtitles')}
+            >
+              Subtitles
+            </button>
+          </div>
+
           <div className="flex-1 overflow-hidden">
-            <MediaBrowser
-              mediaItems={project.mediaItems}
-              bins={project.bins}
-              selectedMedia={selectedMedia}
-              onSelectMedia={setSelectedMedia}
-              onAddToTimeline={handleAddClipToTimeline}
-              onImportMedia={handleImportMediaClick}
-            />
+            {leftPanelTab === 'media' ? (
+              <MediaBrowser
+                mediaItems={project.mediaItems}
+                bins={project.bins}
+                selectedMedia={selectedMedia}
+                onSelectMedia={setSelectedMedia}
+                onAddToTimeline={handleAddClipToTimeline}
+                onImportMedia={handleImportMediaClick}
+              />
+            ) : (
+              <SubtitlePanel
+                sequence={activeSequence}
+                onAddSubtitleTrack={() => addTrack('subtitle')}
+                onCreateSubtitleClip={handleCreateSubtitleClip}
+              />
+            )}
           </div>
           <div
             className="h-1 cursor-row-resize panel-resize-handle"

@@ -20,25 +20,46 @@ export interface Clip {
   mediaId: string;
   trackId: string;
   name: string;
-  type: 'video' | 'audio' | 'image';
+  type: 'video' | 'audio' | 'image' | 'subtitle';
   startTime: number; // position on timeline in seconds
   duration: number; // clip duration in seconds
   inPoint: number; // source in point
   outPoint: number; // source out point
   speed: number;
-  volume: number;
+  volume: number; // linear volume (0-2, where 1 = 0dB)
+  gain: number; // gain in decibels (-infinity to +12dB)
   opacity: number;
   effects: Effect[];
   transitions: { in?: Transition; out?: Transition };
   locked: boolean;
   enabled: boolean;
   color: string;
+  linkedClipId?: string; // ID of linked clip (e.g., audio linked to video)
+  subtitles?: SubtitleEntry[]; // For subtitle clips
+}
+
+export interface SubtitleEntry {
+  id: string;
+  startTime: number; // relative to clip start
+  endTime: number;
+  text: string;
+  style?: SubtitleStyle;
+}
+
+export interface SubtitleStyle {
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  color?: string;
+  backgroundColor?: string;
+  position?: 'top' | 'center' | 'bottom';
 }
 
 export interface Track {
   id: string;
   name: string;
-  type: 'video' | 'audio';
+  type: 'video' | 'audio' | 'subtitle';
   height: number;
   muted: boolean;
   solo: boolean;
