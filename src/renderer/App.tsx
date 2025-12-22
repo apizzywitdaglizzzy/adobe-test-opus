@@ -526,10 +526,10 @@ const App: React.FC = () => {
     const result = await ipcRenderer.invoke('show-open-dialog', {
       title: 'Import Media',
       filters: [
+        { name: 'All Media', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] },
         { name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv'] },
         { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a'] },
         { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] },
-        { name: 'All Media', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'] },
         { name: 'All Files', extensions: ['*'] },
       ],
       properties: ['openFile', 'multiSelections'],
