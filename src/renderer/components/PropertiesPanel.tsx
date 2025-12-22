@@ -1,20 +1,35 @@
-import React, { useState } from 'react';
-import { Clip, MediaItem, Sequence, Effect } from '../../types';
+import React, { useState, useCallback } from 'react';
+import { Clip, MediaItem, Sequence } from '../../types';
 
 interface PropertiesPanelProps {
   selectedClip: Clip | null;
   selectedMedia: MediaItem | null;
   sequence: Sequence | null;
   onClipUpdate: (clipId: string, updates: Partial<Clip>) => void;
+  onUpdateTransitionDuration?: (clipId: string, position: 'in' | 'out', duration: number) => void;
+  onRemoveTransition?: (clipId: string, position: 'in' | 'out') => void;
 }
+
+const TRANSITION_COLORS: Record<string, string> = {
+  dissolve: '#8b5cf6',
+  wipe: '#3b82f6',
+  slide: '#10b981',
+  zoom: '#f59e0b',
+  iris: '#ec4899',
+  '3d': '#06b6d4',
+  page: '#84cc16',
+  audio: '#ef4444',
+};
 
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedClip,
   selectedMedia,
   sequence,
   onClipUpdate,
+  onUpdateTransitionDuration,
+  onRemoveTransition,
 }) => {
-  const [activeTab, setActiveTab] = useState<'clip' | 'effect' | 'motion'>('clip');
+  const [activeTab, setActiveTab] = useState<'clip' | 'effect' | 'motion' | 'transitions'>('clip');
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -531,17 +546,17 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
       {/* Tabs */}
       <div className="flex border-b border-editor-border">
-        {(['clip', 'effect', 'motion'] as const).map((tab) => (
+        {(['clip', 'effect', 'motion', 'transitions'] as const).map((tab) => (
           <button
             key={tab}
-            className={`flex-1 px-3 py-2 text-xs font-medium capitalize ${
+            className={`flex-1 px-2 py-2 text-xs font-medium ${
               activeTab === tab
                 ? 'text-editor-accent border-b-2 border-editor-accent'
                 : 'text-editor-text-secondary hover:text-editor-text'
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab}
+            {tab === 'transitions' ? 'Trans' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -556,9 +571,186 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         )}
         {activeTab === 'effect' && renderEffectProperties()}
         {activeTab === 'motion' && renderMotionProperties()}
+        {activeTab === 'transitions' && renderTransitionProperties()}
       </div>
     </div>
   );
+
+  function renderTransitionProperties() {
+    if (!selectedClip) {
+      return (
+        <div className="flex items-center justify-center h-full text-editor-text-secondary text-sm">
+          Select a clip to view transitions
+        </div>
+      );
+    }
+
+    const hasInTransition = selectedClip.transitions?.in;
+    const hasOutTransition = selectedClip.transitions?.out;
+
+    if (!hasInTransition && !hasOutTransition) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-editor-text-secondary text-sm p-4 text-center">
+          <p>No transitions applied</p>
+          <p className="text-xs mt-2">Drag transitions from the Effects panel onto the start or end of a clip</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* In Transition */}
+        {hasInTransition && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-medium text-editor-text-secondary uppercase">In Transition</h3>
+              {onRemoveTransition && (
+                <button
+                  className="text-xs text-red-400 hover:text-red-300"
+                  onClick={() => onRemoveTransition(selectedClip.id, 'in')}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="p-2 bg-editor-panel rounded border border-editor-border">
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="w-6 h-6 rounded flex items-center justify-center text-xs"
+                  style={{
+                    backgroundColor: (TRANSITION_COLORS[hasInTransition.category] || '#8b5cf6') + '30',
+                    color: TRANSITION_COLORS[hasInTransition.category] || '#8b5cf6',
+                  }}
+                >
+                  ◐
+                </div>
+                <div>
+                  <div className="text-sm font-medium">{hasInTransition.name}</div>
+                  <div className="text-xs text-editor-text-secondary capitalize">{hasInTransition.category}</div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-editor-text-secondary">Duration</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="10"
+                    step="0.1"
+                    value={hasInTransition.duration}
+                    onChange={(e) => {
+                      const duration = parseFloat(e.target.value) || 0.5;
+                      if (onUpdateTransitionDuration) {
+                        onUpdateTransitionDuration(selectedClip.id, 'in', duration);
+                      }
+                    }}
+                    className="w-16 h-6 px-2 bg-editor-bg border border-editor-border rounded text-right text-sm focus:outline-none focus:border-editor-accent"
+                  />
+                  <span className="text-xs text-editor-text-secondary">sec</span>
+                </div>
+              </div>
+              <div className="mt-2">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                  value={hasInTransition.duration}
+                  onChange={(e) => {
+                    const duration = parseFloat(e.target.value);
+                    if (onUpdateTransitionDuration) {
+                      onUpdateTransitionDuration(selectedClip.id, 'in', duration);
+                    }
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Out Transition */}
+        {hasOutTransition && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-medium text-editor-text-secondary uppercase">Out Transition</h3>
+              {onRemoveTransition && (
+                <button
+                  className="text-xs text-red-400 hover:text-red-300"
+                  onClick={() => onRemoveTransition(selectedClip.id, 'out')}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="p-2 bg-editor-panel rounded border border-editor-border">
+              <div className="flex items-center gap-2 mb-2">
+                <div
+                  className="w-6 h-6 rounded flex items-center justify-center text-xs"
+                  style={{
+                    backgroundColor: (TRANSITION_COLORS[hasOutTransition.category] || '#8b5cf6') + '30',
+                    color: TRANSITION_COLORS[hasOutTransition.category] || '#8b5cf6',
+                  }}
+                >
+                  ◑
+                </div>
+                <div>
+                  <div className="text-sm font-medium">{hasOutTransition.name}</div>
+                  <div className="text-xs text-editor-text-secondary capitalize">{hasOutTransition.category}</div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-editor-text-secondary">Duration</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="10"
+                    step="0.1"
+                    value={hasOutTransition.duration}
+                    onChange={(e) => {
+                      const duration = parseFloat(e.target.value) || 0.5;
+                      if (onUpdateTransitionDuration) {
+                        onUpdateTransitionDuration(selectedClip.id, 'out', duration);
+                      }
+                    }}
+                    className="w-16 h-6 px-2 bg-editor-bg border border-editor-border rounded text-right text-sm focus:outline-none focus:border-editor-accent"
+                  />
+                  <span className="text-xs text-editor-text-secondary">sec</span>
+                </div>
+              </div>
+              <div className="mt-2">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                  value={hasOutTransition.duration}
+                  onChange={(e) => {
+                    const duration = parseFloat(e.target.value);
+                    if (onUpdateTransitionDuration) {
+                      onUpdateTransitionDuration(selectedClip.id, 'out', duration);
+                    }
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Transition Tips */}
+        <div className="p-2 bg-editor-bg/50 rounded text-xs text-editor-text-secondary">
+          <p className="font-medium mb-1">Tips:</p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>Drag transitions from Effects panel</li>
+            <li>Drop on left edge for In transition</li>
+            <li>Drop on right edge for Out transition</li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
 };
 
 export default PropertiesPanel;

@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Sequence, Track, Clip, MediaItem, EditorState } from '../../types';
+import { Sequence, Track, Clip, MediaItem, EditorState, TransitionType, Transition } from '../../types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface TimelineProps {
   sequence: Sequence | null;
@@ -18,10 +19,23 @@ interface TimelineProps {
   onAddTrack: (type: 'video' | 'audio' | 'subtitle') => void;
   onSplitClip: () => void;
   mediaItems: MediaItem[];
+  onApplyTransition?: (clipId: string, transition: Transition, position: 'in' | 'out') => void;
 }
 
 const PIXELS_PER_SECOND = 100;
 const TRACK_HEADER_WIDTH = 150;
+
+// Transition color mapping
+const TRANSITION_COLORS: Record<string, string> = {
+  dissolve: '#8b5cf6',
+  wipe: '#3b82f6',
+  slide: '#10b981',
+  zoom: '#f59e0b',
+  iris: '#ec4899',
+  '3d': '#06b6d4',
+  page: '#84cc16',
+  audio: '#ef4444',
+};
 
 const Timeline: React.FC<TimelineProps> = ({
   sequence,
@@ -40,6 +54,7 @@ const Timeline: React.FC<TimelineProps> = ({
   onAddTrack,
   onSplitClip,
   mediaItems,
+  onApplyTransition,
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const tracksContainerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +64,7 @@ const Timeline: React.FC<TimelineProps> = ({
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartTime, setDragStartTime] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+  const [dropTargetClip, setDropTargetClip] = useState<{ clipId: string; position: 'in' | 'out' } | null>(null);
 
   const pixelsPerSecond = PIXELS_PER_SECOND * zoom;
   const duration = sequence?.duration || 300;
@@ -196,11 +212,62 @@ const Timeline: React.FC<TimelineProps> = ({
     return markers;
   };
 
+  // Handle transition drag over clip
+  const handleTransitionDragOver = useCallback((e: React.DragEvent, clipId: string, position: 'in' | 'out') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      const data = e.dataTransfer.types.includes('application/json');
+      if (data) {
+        setDropTargetClip({ clipId, position });
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    } catch {
+      // Ignore errors during drag
+    }
+  }, []);
+
+  const handleTransitionDragLeave = useCallback(() => {
+    setDropTargetClip(null);
+  }, []);
+
+  const handleTransitionDrop = useCallback((e: React.DragEvent, clipId: string, position: 'in' | 'out') => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTargetClip(null);
+
+    try {
+      const jsonData = e.dataTransfer.getData('application/json');
+      if (jsonData) {
+        const data = JSON.parse(jsonData);
+        if (data.type === 'transition' && onApplyTransition) {
+          const transition: Transition = {
+            id: uuidv4(),
+            type: data.transitionId,
+            name: data.transitionName,
+            category: data.category,
+            duration: data.duration || 1,
+            alignment: 'center',
+            parameters: [],
+          };
+          onApplyTransition(clipId, transition, position);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to parse transition data:', err);
+    }
+  }, [onApplyTransition]);
+
   const renderClip = (clip: Clip, track: Track) => {
     const x = timeToPixels(clip.startTime);
     const width = timeToPixels(clip.duration);
     const isSelected = selectedClips.includes(clip.id);
     const media = mediaItems.find((m) => m.id === clip.mediaId);
+    const hasInTransition = clip.transitions?.in;
+    const hasOutTransition = clip.transitions?.out;
+    const isInDropTarget = dropTargetClip?.clipId === clip.id && dropTargetClip?.position === 'in';
+    const isOutDropTarget = dropTargetClip?.clipId === clip.id && dropTargetClip?.position === 'out';
 
     return (
       <div
@@ -215,6 +282,52 @@ const Timeline: React.FC<TimelineProps> = ({
         }}
         onMouseDown={(e) => handleClipMouseDown(e, clip, 'move')}
       >
+        {/* Transition drop zones */}
+        <div
+          className={`absolute left-0 top-0 bottom-0 w-8 z-20 transition-colors ${
+            isInDropTarget ? 'bg-purple-500/50' : 'hover:bg-purple-500/20'
+          }`}
+          onDragOver={(e) => handleTransitionDragOver(e, clip.id, 'in')}
+          onDragLeave={handleTransitionDragLeave}
+          onDrop={(e) => handleTransitionDrop(e, clip.id, 'in')}
+        />
+        <div
+          className={`absolute right-0 top-0 bottom-0 w-8 z-20 transition-colors ${
+            isOutDropTarget ? 'bg-purple-500/50' : 'hover:bg-purple-500/20'
+          }`}
+          onDragOver={(e) => handleTransitionDragOver(e, clip.id, 'out')}
+          onDragLeave={handleTransitionDragLeave}
+          onDrop={(e) => handleTransitionDrop(e, clip.id, 'out')}
+        />
+
+        {/* In Transition indicator */}
+        {hasInTransition && (
+          <div
+            className="absolute left-0 top-0 bottom-0 flex items-center justify-center z-10"
+            style={{
+              width: timeToPixels(hasInTransition.duration),
+              background: `linear-gradient(to right, ${TRANSITION_COLORS[hasInTransition.category] || '#8b5cf6'}90, transparent)`,
+            }}
+            title={`${hasInTransition.name} (${hasInTransition.duration}s)`}
+          >
+            <span className="text-white text-xs font-bold opacity-80">◐</span>
+          </div>
+        )}
+
+        {/* Out Transition indicator */}
+        {hasOutTransition && (
+          <div
+            className="absolute right-0 top-0 bottom-0 flex items-center justify-center z-10"
+            style={{
+              width: timeToPixels(hasOutTransition.duration),
+              background: `linear-gradient(to left, ${TRANSITION_COLORS[hasOutTransition.category] || '#8b5cf6'}90, transparent)`,
+            }}
+            title={`${hasOutTransition.name} (${hasOutTransition.duration}s)`}
+          >
+            <span className="text-white text-xs font-bold opacity-80">◑</span>
+          </div>
+        )}
+
         {/* Resize handles */}
         <div
           className="resize-handle resize-handle-left"
@@ -286,6 +399,11 @@ const Timeline: React.FC<TimelineProps> = ({
         {/* Effects indicator */}
         {clip.effects.length > 0 && (
           <div className="absolute top-0 right-0 w-2 h-2 bg-yellow-400 rounded-bl" />
+        )}
+
+        {/* Transitions indicator badge */}
+        {(hasInTransition || hasOutTransition) && (
+          <div className="absolute top-0 left-0 w-2 h-2 bg-purple-500 rounded-br" />
         )}
       </div>
     );

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Clip, Effect, EffectPreset, TransitionPreset } from '../../types';
+import React, { useState, useCallback } from 'react';
+import { Clip, EffectPreset, TransitionPreset, TransitionType } from '../../types';
 
 interface EffectsPanelProps {
   selectedClip: Clip | null;
   onApplyEffect: (effect: EffectPreset) => void;
+  onApplyTransition?: (clipId: string, transitionType: TransitionType, duration: number, position: 'in' | 'out') => void;
 }
 
 const videoEffects: EffectPreset[] = [
@@ -172,24 +173,100 @@ const audioEffects: EffectPreset[] = [
   },
 ];
 
-const transitions: TransitionPreset[] = [
-  { id: 'dissolve', name: 'Cross Dissolve', category: 'Dissolve', icon: '◐', defaultDuration: 1, defaultParams: [] },
-  { id: 'dip-black', name: 'Dip to Black', category: 'Dissolve', icon: '■', defaultDuration: 1, defaultParams: [] },
-  { id: 'dip-white', name: 'Dip to White', category: 'Dissolve', icon: '□', defaultDuration: 1, defaultParams: [] },
-  { id: 'wipe-left', name: 'Wipe Left', category: 'Wipe', icon: '←', defaultDuration: 1, defaultParams: [] },
-  { id: 'wipe-right', name: 'Wipe Right', category: 'Wipe', icon: '→', defaultDuration: 1, defaultParams: [] },
-  { id: 'wipe-up', name: 'Wipe Up', category: 'Wipe', icon: '↑', defaultDuration: 1, defaultParams: [] },
-  { id: 'wipe-down', name: 'Wipe Down', category: 'Wipe', icon: '↓', defaultDuration: 1, defaultParams: [] },
-  { id: 'slide-left', name: 'Slide Left', category: 'Slide', icon: '⇐', defaultDuration: 1, defaultParams: [] },
-  { id: 'slide-right', name: 'Slide Right', category: 'Slide', icon: '⇒', defaultDuration: 1, defaultParams: [] },
-  { id: 'zoom-in', name: 'Zoom In', category: 'Zoom', icon: '⊕', defaultDuration: 1, defaultParams: [] },
-  { id: 'zoom-out', name: 'Zoom Out', category: 'Zoom', icon: '⊖', defaultDuration: 1, defaultParams: [] },
+// Comprehensive transitions like Adobe Premiere Pro
+const transitions: (TransitionPreset & { type: TransitionType; description: string })[] = [
+  // Dissolve Transitions
+  { id: 'cross-dissolve', type: 'cross-dissolve', name: 'Cross Dissolve', category: 'Dissolve', icon: '◐', defaultDuration: 1, defaultParams: [], description: 'Smooth blend between clips' },
+  { id: 'dip-to-black', type: 'dip-to-black', name: 'Dip to Black', category: 'Dissolve', icon: '◑', defaultDuration: 1, defaultParams: [], description: 'Fade through black' },
+  { id: 'dip-to-white', type: 'dip-to-white', name: 'Dip to White', category: 'Dissolve', icon: '◒', defaultDuration: 1, defaultParams: [], description: 'Fade through white' },
+  { id: 'film-dissolve', type: 'film-dissolve', name: 'Film Dissolve', category: 'Dissolve', icon: '◓', defaultDuration: 1, defaultParams: [], description: 'Cinematic dissolve' },
+  { id: 'additive-dissolve', type: 'additive-dissolve', name: 'Additive Dissolve', category: 'Dissolve', icon: '◔', defaultDuration: 1, defaultParams: [], description: 'Bright additive blend' },
+  { id: 'blur-dissolve', type: 'blur-dissolve', name: 'Blur Dissolve', category: 'Dissolve', icon: '◕', defaultDuration: 1.5, defaultParams: [], description: 'Dissolve with blur' },
+  { id: 'morph', type: 'morph', name: 'Morph', category: 'Dissolve', icon: '∞', defaultDuration: 1.5, defaultParams: [], description: 'Morphing transition' },
+  { id: 'glitch', type: 'glitch', name: 'Glitch', category: 'Dissolve', icon: '⚡', defaultDuration: 0.5, defaultParams: [], description: 'Digital glitch effect' },
+
+  // Wipe Transitions
+  { id: 'wipe-left', type: 'wipe-left', name: 'Wipe Left', category: 'Wipe', icon: '◀', defaultDuration: 0.75, defaultParams: [], description: 'Wipe from right to left' },
+  { id: 'wipe-right', type: 'wipe-right', name: 'Wipe Right', category: 'Wipe', icon: '▶', defaultDuration: 0.75, defaultParams: [], description: 'Wipe from left to right' },
+  { id: 'wipe-up', type: 'wipe-up', name: 'Wipe Up', category: 'Wipe', icon: '▲', defaultDuration: 0.75, defaultParams: [], description: 'Wipe from bottom to top' },
+  { id: 'wipe-down', type: 'wipe-down', name: 'Wipe Down', category: 'Wipe', icon: '▼', defaultDuration: 0.75, defaultParams: [], description: 'Wipe from top to bottom' },
+  { id: 'wipe-diagonal', type: 'wipe-diagonal', name: 'Diagonal Wipe', category: 'Wipe', icon: '◢', defaultDuration: 0.75, defaultParams: [], description: 'Diagonal corner wipe' },
+  { id: 'wipe-clock', type: 'wipe-clock', name: 'Clock Wipe', category: 'Wipe', icon: '⟳', defaultDuration: 1, defaultParams: [], description: 'Clockwise circular wipe' },
+  { id: 'wipe-radial', type: 'wipe-radial', name: 'Radial Wipe', category: 'Wipe', icon: '⊙', defaultDuration: 1, defaultParams: [], description: 'Radial outward wipe' },
+  { id: 'barn-doors', type: 'barn-doors', name: 'Barn Doors', category: 'Wipe', icon: '⟺', defaultDuration: 0.75, defaultParams: [], description: 'Split from center' },
+  { id: 'split', type: 'split', name: 'Split', category: 'Wipe', icon: '⫿', defaultDuration: 0.75, defaultParams: [], description: 'Vertical split reveal' },
+
+  // Slide Transitions
+  { id: 'push-left', type: 'push-left', name: 'Push Left', category: 'Slide', icon: '⇐', defaultDuration: 0.5, defaultParams: [], description: 'Push clip off to left' },
+  { id: 'push-right', type: 'push-right', name: 'Push Right', category: 'Slide', icon: '⇒', defaultDuration: 0.5, defaultParams: [], description: 'Push clip off to right' },
+  { id: 'push-up', type: 'push-up', name: 'Push Up', category: 'Slide', icon: '⇑', defaultDuration: 0.5, defaultParams: [], description: 'Push clip off upward' },
+  { id: 'push-down', type: 'push-down', name: 'Push Down', category: 'Slide', icon: '⇓', defaultDuration: 0.5, defaultParams: [], description: 'Push clip off downward' },
+  { id: 'slide-left', type: 'slide-left', name: 'Slide Left', category: 'Slide', icon: '←', defaultDuration: 0.5, defaultParams: [], description: 'Slide over from right' },
+  { id: 'slide-right', type: 'slide-right', name: 'Slide Right', category: 'Slide', icon: '→', defaultDuration: 0.5, defaultParams: [], description: 'Slide over from left' },
+  { id: 'slide-up', type: 'slide-up', name: 'Slide Up', category: 'Slide', icon: '↑', defaultDuration: 0.5, defaultParams: [], description: 'Slide over from bottom' },
+  { id: 'slide-down', type: 'slide-down', name: 'Slide Down', category: 'Slide', icon: '↓', defaultDuration: 0.5, defaultParams: [], description: 'Slide over from top' },
+
+  // Zoom Transitions
+  { id: 'zoom-in', type: 'zoom-in', name: 'Zoom In', category: 'Zoom', icon: '⊕', defaultDuration: 0.75, defaultParams: [], description: 'Zoom into next clip' },
+  { id: 'zoom-out', type: 'zoom-out', name: 'Zoom Out', category: 'Zoom', icon: '⊖', defaultDuration: 0.75, defaultParams: [], description: 'Zoom out to next clip' },
+  { id: 'zoom-cross', type: 'zoom-cross', name: 'Cross Zoom', category: 'Zoom', icon: '⊗', defaultDuration: 1, defaultParams: [], description: 'Zoom through transition' },
+  { id: 'cross-stretch', type: 'cross-stretch', name: 'Cross Stretch', category: 'Zoom', icon: '⤢', defaultDuration: 0.75, defaultParams: [], description: 'Stretch and cross fade' },
+
+  // Iris Transitions
+  { id: 'iris-circle', type: 'iris-circle', name: 'Iris Circle', category: 'Iris', icon: '○', defaultDuration: 0.75, defaultParams: [], description: 'Circular iris reveal' },
+  { id: 'iris-diamond', type: 'iris-diamond', name: 'Iris Diamond', category: 'Iris', icon: '◇', defaultDuration: 0.75, defaultParams: [], description: 'Diamond shape reveal' },
+  { id: 'iris-square', type: 'iris-square', name: 'Iris Square', category: 'Iris', icon: '□', defaultDuration: 0.75, defaultParams: [], description: 'Square shape reveal' },
+  { id: 'iris-star', type: 'iris-star', name: 'Iris Star', category: 'Iris', icon: '☆', defaultDuration: 0.75, defaultParams: [], description: 'Star shape reveal' },
+  { id: 'iris-heart', type: 'iris-heart', name: 'Iris Heart', category: 'Iris', icon: '♡', defaultDuration: 0.75, defaultParams: [], description: 'Heart shape reveal' },
+
+  // 3D Motion Transitions
+  { id: 'flip-horizontal', type: 'flip-horizontal', name: 'Flip H', category: '3D Motion', icon: '⇄', defaultDuration: 0.75, defaultParams: [], description: '3D horizontal flip' },
+  { id: 'flip-vertical', type: 'flip-vertical', name: 'Flip V', category: '3D Motion', icon: '⇅', defaultDuration: 0.75, defaultParams: [], description: '3D vertical flip' },
+  { id: 'cube-spin', type: 'cube-spin', name: 'Cube Spin', category: '3D Motion', icon: '⬡', defaultDuration: 1, defaultParams: [], description: '3D cube rotation' },
+
+  // Page Transitions
+  { id: 'page-peel', type: 'page-peel', name: 'Page Peel', category: 'Page', icon: '⤴', defaultDuration: 1, defaultParams: [], description: 'Page peel effect' },
+  { id: 'page-curl', type: 'page-curl', name: 'Page Curl', category: 'Page', icon: '⤵', defaultDuration: 1, defaultParams: [], description: 'Page curl effect' },
+
+  // Audio Transitions
+  { id: 'crossfade-constant-gain', type: 'crossfade-constant-gain', name: 'Constant Gain', category: 'Audio Crossfade', icon: '🔊', defaultDuration: 1, defaultParams: [], description: 'Linear audio crossfade' },
+  { id: 'crossfade-constant-power', type: 'crossfade-constant-power', name: 'Constant Power', category: 'Audio Crossfade', icon: '🔉', defaultDuration: 1, defaultParams: [], description: 'Logarithmic crossfade' },
+  { id: 'exponential-fade', type: 'exponential-fade', name: 'Exponential', category: 'Audio Crossfade', icon: '🔈', defaultDuration: 1, defaultParams: [], description: 'Exponential audio fade' },
 ];
 
-const EffectsPanel: React.FC<EffectsPanelProps> = ({ selectedClip, onApplyEffect }) => {
+const CATEGORY_COLORS: Record<string, string> = {
+  'Dissolve': '#8b5cf6',
+  'Wipe': '#3b82f6',
+  'Slide': '#10b981',
+  'Zoom': '#f59e0b',
+  'Iris': '#ec4899',
+  '3D Motion': '#06b6d4',
+  'Page': '#84cc16',
+  'Audio Crossfade': '#ef4444',
+};
+
+const EffectsPanel: React.FC<EffectsPanelProps> = ({ selectedClip, onApplyEffect, onApplyTransition }) => {
   const [activeTab, setActiveTab] = useState<'video' | 'audio' | 'transitions'>('video');
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['Dissolve', 'Wipe']);
+  const [defaultTransitionDuration, setDefaultTransitionDuration] = useState(1.0);
+
+  const handleTransitionDragStart = useCallback((e: React.DragEvent, transition: typeof transitions[0]) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      type: 'transition',
+      transitionId: transition.type,
+      transitionName: transition.name,
+      category: transition.category,
+      duration: defaultTransitionDuration,
+    }));
+    e.dataTransfer.effectAllowed = 'copy';
+  }, [defaultTransitionDuration]);
+
+  const handleTransitionDoubleClick = useCallback((transition: typeof transitions[0]) => {
+    if (selectedClip && onApplyTransition) {
+      onApplyTransition(selectedClip.id, transition.type, defaultTransitionDuration, 'in');
+    }
+  }, [selectedClip, onApplyTransition, defaultTransitionDuration]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories((prev) =>
@@ -254,11 +331,18 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ selectedClip, onApplyEffect
   };
 
   const renderTransitions = () => {
-    const categories: { [key: string]: TransitionPreset[] } = {};
-    const filtered = transitions.filter((t) =>
+    // Filter transitions based on clip type
+    const filteredByType = selectedClip?.type === 'audio'
+      ? transitions.filter((t) => t.category === 'Audio Crossfade')
+      : selectedClip?.type === 'video' || selectedClip?.type === 'image'
+        ? transitions.filter((t) => t.category !== 'Audio Crossfade')
+        : transitions;
+
+    const filtered = filteredByType.filter((t) =>
       t.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const categories: { [key: string]: typeof transitions } = {};
     for (const transition of filtered) {
       if (!categories[transition.category]) {
         categories[transition.category] = [];
@@ -266,41 +350,83 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ selectedClip, onApplyEffect
       categories[transition.category].push(transition);
     }
 
-    return Object.entries(categories).map(([category, categoryTransitions]) => (
-      <div key={category} className="border-b border-editor-border">
-        <button
-          className="w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-editor-panel"
-          onClick={() => toggleCategory(category)}
-        >
-          <span>{category}</span>
-          <svg
-            className={`w-4 h-4 transform transition-transform ${
-              expandedCategories.includes(category) ? 'rotate-180' : ''
-            }`}
-            fill="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </button>
-        {expandedCategories.includes(category) && (
-          <div className="grid grid-cols-2 gap-1 px-2 pb-2">
-            {categoryTransitions.map((transition) => (
-              <div
-                key={transition.id}
-                className="flex flex-col items-center gap-1 p-2 rounded text-xs cursor-pointer hover:bg-editor-panel"
-                draggable
+    return (
+      <>
+        {/* Duration Setting */}
+        <div className="p-2 border-b border-editor-border flex items-center gap-2">
+          <span className="text-xs text-editor-text-secondary">Duration:</span>
+          <input
+            type="number"
+            min="0.1"
+            max="10"
+            step="0.1"
+            value={defaultTransitionDuration}
+            onChange={(e) => setDefaultTransitionDuration(parseFloat(e.target.value) || 1.0)}
+            className="w-14 h-6 px-1 bg-editor-panel border border-editor-border rounded text-xs text-right focus:outline-none focus:border-editor-accent"
+          />
+          <span className="text-xs text-editor-text-secondary">sec</span>
+        </div>
+
+        {/* Instructions */}
+        <div className="p-2 bg-editor-bg/50 text-xs text-editor-text-secondary border-b border-editor-border">
+          Drag to timeline or double-click to apply
+        </div>
+
+        {Object.entries(categories).map(([category, categoryTransitions]) => (
+          <div key={category} className="border-b border-editor-border">
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-editor-panel"
+              onClick={() => toggleCategory(category)}
+            >
+              <span
+                className="text-xs transition-transform"
+                style={{
+                  transform: expandedCategories.includes(category) ? 'rotate(90deg)' : 'rotate(0deg)',
+                }}
               >
-                <div className="w-12 h-8 bg-editor-border rounded flex items-center justify-center text-lg">
-                  {transition.icon}
-                </div>
-                <span className="text-center">{transition.name}</span>
+                ▶
+              </span>
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: CATEGORY_COLORS[category] || '#666' }}
+              />
+              <span className="font-medium">{category}</span>
+              <span className="ml-auto text-xs text-editor-text-secondary">
+                {categoryTransitions.length}
+              </span>
+            </button>
+            {expandedCategories.includes(category) && (
+              <div className="grid grid-cols-2 gap-1 px-2 pb-2">
+                {categoryTransitions.map((transition) => (
+                  <div
+                    key={transition.id}
+                    className="flex items-center gap-2 p-2 rounded text-xs cursor-grab active:cursor-grabbing hover:bg-editor-panel border border-transparent hover:border-editor-accent transition-colors"
+                    draggable
+                    onDragStart={(e) => handleTransitionDragStart(e, transition)}
+                    onDoubleClick={() => handleTransitionDoubleClick(transition)}
+                    title={transition.description}
+                  >
+                    <div
+                      className="w-7 h-7 rounded flex items-center justify-center text-sm flex-shrink-0"
+                      style={{
+                        backgroundColor: (CATEGORY_COLORS[category] || '#666') + '20',
+                        color: CATEGORY_COLORS[category] || '#666',
+                      }}
+                    >
+                      {transition.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium">{transition.name}</div>
+                      <div className="text-editor-text-secondary">{transition.defaultDuration}s</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-    ));
+        ))}
+      </>
+    );
   };
 
   return (

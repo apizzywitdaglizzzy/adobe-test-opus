@@ -105,9 +105,56 @@ export interface Transition {
   id: string;
   type: string;
   name: string;
+  category: 'dissolve' | 'wipe' | 'slide' | 'zoom' | 'iris' | '3d' | 'page' | 'audio';
   duration: number;
+  alignment: 'center' | 'start' | 'end'; // Center on cut, start at cut, end at cut
   parameters: EffectParameter[];
 }
+
+// Predefined transition types available in the editor
+export type TransitionType =
+  | 'cross-dissolve'
+  | 'dip-to-black'
+  | 'dip-to-white'
+  | 'film-dissolve'
+  | 'additive-dissolve'
+  | 'wipe-left'
+  | 'wipe-right'
+  | 'wipe-up'
+  | 'wipe-down'
+  | 'wipe-diagonal'
+  | 'wipe-clock'
+  | 'wipe-radial'
+  | 'push-left'
+  | 'push-right'
+  | 'push-up'
+  | 'push-down'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-cross'
+  | 'iris-circle'
+  | 'iris-diamond'
+  | 'iris-square'
+  | 'iris-star'
+  | 'iris-heart'
+  | 'flip-horizontal'
+  | 'flip-vertical'
+  | 'cube-spin'
+  | 'page-peel'
+  | 'page-curl'
+  | 'barn-doors'
+  | 'split'
+  | 'cross-stretch'
+  | 'morph'
+  | 'glitch'
+  | 'blur-dissolve'
+  | 'crossfade-constant-gain'
+  | 'crossfade-constant-power'
+  | 'exponential-fade';
 
 export interface Sequence {
   id: string;

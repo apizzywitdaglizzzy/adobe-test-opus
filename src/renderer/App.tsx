@@ -10,7 +10,7 @@ import PropertiesPanel from './components/PropertiesPanel';
 import SubtitlePanel from './components/SubtitlePanel';
 import ExportDialog from './components/ExportDialog';
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog';
-import { Project, Sequence, MediaItem, Track, Clip, PlaybackState, EditorState, SubtitleEntry } from '../types';
+import { Project, Sequence, MediaItem, Track, Clip, PlaybackState, EditorState, SubtitleEntry, Transition } from '../types';
 
 const { ipcRenderer } = window.require('electron');
 
@@ -684,6 +684,76 @@ const App: React.FC = () => {
     [activeSequence, addTrack]
   );
 
+  const handleApplyTransition = useCallback(
+    (clipId: string, transition: Transition, position: 'in' | 'out') => {
+      if (!activeSequence) return;
+
+      const updatedTracks = activeSequence.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId) return clip;
+          return {
+            ...clip,
+            transitions: {
+              ...clip.transitions,
+              [position]: transition,
+            },
+          };
+        }),
+      }));
+
+      setActiveSequence({ ...activeSequence, tracks: updatedTracks });
+    },
+    [activeSequence]
+  );
+
+  const handleRemoveTransition = useCallback(
+    (clipId: string, position: 'in' | 'out') => {
+      if (!activeSequence) return;
+
+      const updatedTracks = activeSequence.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId) return clip;
+          const newTransitions = { ...clip.transitions };
+          delete newTransitions[position];
+          return {
+            ...clip,
+            transitions: newTransitions,
+          };
+        }),
+      }));
+
+      setActiveSequence({ ...activeSequence, tracks: updatedTracks });
+    },
+    [activeSequence]
+  );
+
+  const handleUpdateTransitionDuration = useCallback(
+    (clipId: string, position: 'in' | 'out', duration: number) => {
+      if (!activeSequence) return;
+
+      const updatedTracks = activeSequence.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id !== clipId) return clip;
+          const transition = clip.transitions[position];
+          if (!transition) return clip;
+          return {
+            ...clip,
+            transitions: {
+              ...clip.transitions,
+              [position]: { ...transition, duration },
+            },
+          };
+        }),
+      }));
+
+      setActiveSequence({ ...activeSequence, tracks: updatedTracks });
+    },
+    [activeSequence]
+  );
+
   const handleImportMediaClick = useCallback(async () => {
     const result = await ipcRenderer.invoke('show-open-dialog', {
       title: 'Import Media',
@@ -954,6 +1024,7 @@ const App: React.FC = () => {
               onZoomChange={setZoom}
               onAddTrack={addTrack}
               onSplitClip={splitClip}
+              onApplyTransition={handleApplyTransition}
               mediaItems={project.mediaItems}
             />
           </div>
@@ -997,6 +1068,8 @@ const App: React.FC = () => {
               }));
               setActiveSequence({ ...activeSequence, tracks: updatedTracks });
             }}
+            onUpdateTransitionDuration={handleUpdateTransitionDuration}
+            onRemoveTransition={handleRemoveTransition}
           />
         </div>
       </div>
