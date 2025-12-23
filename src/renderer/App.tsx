@@ -901,13 +901,26 @@ const App: React.FC = () => {
       if (!movingClip || !sourceTrackId) return;
 
       const updatedTracks = activeSequence.tracks.map((track) => {
-        if (track.id === sourceTrackId) {
+        // Same track - just update the clip's position
+        if (track.id === sourceTrackId && sourceTrackId === newTrackId) {
+          return {
+            ...track,
+            clips: track.clips.map((c) =>
+              c.id === clipId
+                ? { ...c, startTime: Math.max(0, newStartTime) }
+                : c
+            ),
+          };
+        }
+        // Moving from this track to another - remove the clip
+        if (track.id === sourceTrackId && sourceTrackId !== newTrackId) {
           return {
             ...track,
             clips: track.clips.filter((c) => c.id !== clipId),
           };
         }
-        if (track.id === newTrackId) {
+        // Moving to this track from another - add the clip
+        if (track.id === newTrackId && sourceTrackId !== newTrackId) {
           return {
             ...track,
             clips: [

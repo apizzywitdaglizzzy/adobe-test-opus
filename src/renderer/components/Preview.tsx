@@ -30,6 +30,7 @@ const Preview: React.FC<PreviewProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const [playbackRate, setPlaybackRate] = useState(1);
   const [volume, setVolume] = useState(1);
@@ -38,6 +39,7 @@ const Preview: React.FC<PreviewProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [activeClip, setActiveClip] = useState<Clip | null>(null);
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
+  const [activeAudioClips, setActiveAudioClips] = useState<Array<{ clip: Clip; media: MediaItem }>>([]);
   const lastSeekTimeRef = useRef<number>(0);
 
   const formatTime = (seconds: number): string => {
@@ -72,7 +74,7 @@ const Preview: React.FC<PreviewProps> = ({
     return () => window.removeEventListener('resize', updateSize);
   }, [sequence]);
 
-  // Find active clip at current time
+  // Find active video clip at current time
   useEffect(() => {
     if (!sequence) {
       setActiveClip(null);
@@ -83,6 +85,7 @@ const Preview: React.FC<PreviewProps> = ({
     const videoTracks = sequence.tracks.filter((t) => t.type === 'video');
 
     for (const track of videoTracks) {
+      if (track.muted) continue;
       for (const clip of track.clips) {
         if (!clip.enabled) continue;
         if (currentTime >= clip.startTime && currentTime < clip.startTime + clip.duration) {
@@ -105,6 +108,88 @@ const Preview: React.FC<PreviewProps> = ({
     setActiveClip(null);
     setActiveMedia(null);
   }, [currentTime, sequence, mediaItems]);
+
+  // Find active audio clips at current time
+  useEffect(() => {
+    if (!sequence) {
+      setActiveAudioClips([]);
+      return;
+    }
+
+    const audioTracks = sequence.tracks.filter((t) => t.type === 'audio');
+    const activeAudio: Array<{ clip: Clip; media: MediaItem }> = [];
+
+    for (const track of audioTracks) {
+      if (track.muted) continue;
+      for (const clip of track.clips) {
+        if (!clip.enabled) continue;
+        if (currentTime >= clip.startTime && currentTime < clip.startTime + clip.duration) {
+          const media = mediaItems.find((m) => m.id === clip.mediaId);
+          if (media) {
+            activeAudio.push({ clip, media });
+          }
+        }
+      }
+    }
+
+    setActiveAudioClips(activeAudio);
+  }, [currentTime, sequence, mediaItems]);
+
+  // Sync audio elements with timeline
+  useEffect(() => {
+    const currentAudioIds = new Set(activeAudioClips.map(({ clip }) => clip.id));
+
+    // Stop and remove audio elements for clips that are no longer active
+    audioRefs.current.forEach((audio, clipId) => {
+      if (!currentAudioIds.has(clipId)) {
+        audio.pause();
+        audio.src = '';
+        audioRefs.current.delete(clipId);
+      }
+    });
+
+    // Create or update audio elements for active clips
+    activeAudioClips.forEach(({ clip, media }) => {
+      let audio = audioRefs.current.get(clip.id);
+
+      if (!audio) {
+        audio = new Audio();
+        audio.src = `file://${media.path}`;
+        audioRefs.current.set(clip.id, audio);
+      }
+
+      // Calculate the time within the clip
+      const clipTime = (currentTime - clip.startTime) * clip.speed + clip.inPoint;
+
+      // Apply clip gain (dB to linear)
+      const gainLinear = Math.pow(10, (clip.gain || 0) / 20);
+      audio.volume = isMuted ? 0 : Math.min(1, volume * clip.volume * gainLinear);
+      audio.playbackRate = playbackRate * clip.speed;
+
+      // Seek if needed
+      if (Math.abs(audio.currentTime - clipTime) > 0.15) {
+        audio.currentTime = clipTime;
+      }
+
+      // Play or pause
+      if (isPlaying && audio.paused) {
+        audio.play().catch(() => {});
+      } else if (!isPlaying && !audio.paused) {
+        audio.pause();
+      }
+    });
+  }, [activeAudioClips, currentTime, isPlaying, volume, isMuted, playbackRate]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      audioRefs.current.forEach((audio) => {
+        audio.pause();
+        audio.src = '';
+      });
+      audioRefs.current.clear();
+    };
+  }, []);
 
   // Sync video element with timeline
   useEffect(() => {
