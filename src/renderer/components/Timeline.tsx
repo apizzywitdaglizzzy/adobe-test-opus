@@ -92,7 +92,8 @@ const Timeline: React.FC<TimelineProps> = ({
     if (tool === 'razor') return;
 
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - TRACK_HEADER_WIDTH + scrollLeft;
+    // x position relative to ruler container, plus scroll offset
+    const x = e.clientX - rect.left + scrollLeft;
     const time = Math.max(0, pixelsToTime(x));
     onTimeChange(time);
   };
@@ -148,23 +149,48 @@ const Timeline: React.FC<TimelineProps> = ({
             const containerRect = tracksContainer.getBoundingClientRect();
             const mouseY = e.clientY - containerRect.top + tracksContainer.scrollTop;
 
-            // Find which track the mouse is over
+            // Build track layout with proper heights including add-track buttons
+            const videoTracks = (sequence?.tracks || []).filter(t => t.type === 'video');
+            const audioTracks = (sequence?.tracks || []).filter(t => t.type === 'audio');
+            const subtitleTracks = (sequence?.tracks || []).filter(t => t.type === 'subtitle');
+            const ADD_BUTTON_HEIGHT = 32; // h-8 = 32px
+
             let accumulatedHeight = 0;
             let targetTrackId = clip.trackId;
 
-            for (const track of sequence?.tracks || []) {
-              const trackHeight = track.height + 8; // Include button row height
-              if (mouseY >= accumulatedHeight && mouseY < accumulatedHeight + trackHeight) {
-                // Check if track types are compatible
-                if ((clip.type === 'video' && track.type === 'video') ||
-                    (clip.type === 'audio' && track.type === 'audio') ||
-                    (clip.type === 'subtitle' && track.type === 'subtitle') ||
-                    (clip.type === 'image' && track.type === 'video')) {
+            // Check video tracks
+            for (const track of videoTracks) {
+              if (mouseY >= accumulatedHeight && mouseY < accumulatedHeight + track.height) {
+                if (clip.type === 'video' || clip.type === 'image') {
                   targetTrackId = track.id;
                 }
                 break;
               }
-              accumulatedHeight += trackHeight;
+              accumulatedHeight += track.height;
+            }
+            accumulatedHeight += ADD_BUTTON_HEIGHT; // Add video track button
+
+            // Check audio tracks
+            for (const track of audioTracks) {
+              if (mouseY >= accumulatedHeight && mouseY < accumulatedHeight + track.height) {
+                if (clip.type === 'audio') {
+                  targetTrackId = track.id;
+                }
+                break;
+              }
+              accumulatedHeight += track.height;
+            }
+            accumulatedHeight += ADD_BUTTON_HEIGHT; // Add audio track button
+
+            // Check subtitle tracks
+            for (const track of subtitleTracks) {
+              if (mouseY >= accumulatedHeight && mouseY < accumulatedHeight + track.height) {
+                if (clip.type === 'subtitle') {
+                  targetTrackId = track.id;
+                }
+                break;
+              }
+              accumulatedHeight += track.height;
             }
 
             onClipMove(dragClipId, snapping ? Math.round(newStartTime * 10) / 10 : newStartTime, targetTrackId);
@@ -561,7 +587,13 @@ const Timeline: React.FC<TimelineProps> = ({
           onClick={handleTimelineClick}
           ref={timelineRef}
         >
-          <div className="relative h-full" style={{ width: timelineWidth }}>
+          <div
+            className="relative h-full"
+            style={{
+              width: timelineWidth,
+              transform: `translateX(-${scrollLeft}px)`,
+            }}
+          >
             {renderTimeRuler()}
           </div>
         </div>

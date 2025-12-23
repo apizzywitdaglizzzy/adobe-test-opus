@@ -452,6 +452,21 @@ ipcMain.handle('probe-media', async (_, filePath: string) => {
         const hasAudio = !!audioStream;
         const duration = parseFloat(format.duration) || 10;
 
+        // Parse frame rate safely (format: "30/1" or "30000/1001")
+        let frameRate = 30;
+        if (videoStream && videoStream.r_frame_rate) {
+          const parts = videoStream.r_frame_rate.split('/');
+          if (parts.length === 2) {
+            const num = parseInt(parts[0]);
+            const den = parseInt(parts[1]);
+            if (den > 0) {
+              frameRate = Math.round(num / den * 100) / 100;
+            }
+          } else {
+            frameRate = parseFloat(videoStream.r_frame_rate) || 30;
+          }
+        }
+
         resolve({
           success: true,
           hasVideo,
@@ -459,7 +474,7 @@ ipcMain.handle('probe-media', async (_, filePath: string) => {
           duration,
           width: videoStream ? parseInt(videoStream.width) || 1920 : 0,
           height: videoStream ? parseInt(videoStream.height) || 1080 : 0,
-          frameRate: videoStream ? eval(videoStream.r_frame_rate) || 30 : 30,
+          frameRate,
           probeFailed: false,
         });
       } catch (parseError) {
