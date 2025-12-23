@@ -279,6 +279,50 @@ const App: React.FC = () => {
     setProject(updatedProject);
   };
 
+  // Helper function to probe media using HTML5 video element (fallback when ffprobe unavailable)
+  const probeMediaWithVideoElement = (filePath: string): Promise<{
+    hasVideo: boolean;
+    hasAudio: boolean;
+    duration: number;
+    width: number;
+    height: number;
+  }> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+
+      const timeout = setTimeout(() => {
+        video.src = '';
+        resolve({ hasVideo: true, hasAudio: true, duration: 10, width: 1920, height: 1080 });
+      }, 5000);
+
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout);
+        const hasVideo = video.videoWidth > 0 && video.videoHeight > 0;
+        const duration = isFinite(video.duration) ? video.duration : 10;
+        resolve({
+          hasVideo,
+          hasAudio: true, // Can't reliably detect audio-only from video element
+          duration,
+          width: video.videoWidth || 0,
+          height: video.videoHeight || 0,
+        });
+        video.src = '';
+      };
+
+      video.onerror = () => {
+        clearTimeout(timeout);
+        // If video element can't load it, might be audio-only
+        resolve({ hasVideo: false, hasAudio: true, duration: 10, width: 0, height: 0 });
+        video.src = '';
+      };
+
+      // Use file:// protocol for local files
+      video.src = `file://${filePath}`;
+    });
+  };
+
   const handleImportMedia = useCallback(async (paths: string[]) => {
     const newMedia: MediaItem[] = [];
 
@@ -314,6 +358,15 @@ const App: React.FC = () => {
             height = probeResult.height || 1080;
             frameRate = probeResult.frameRate || 30;
 
+            // If ffprobe failed, use HTML5 video element as fallback
+            if (probeResult.probeFailed) {
+              const videoProbe = await probeMediaWithVideoElement(filePath);
+              hasVideo = videoProbe.hasVideo;
+              duration = videoProbe.duration;
+              width = videoProbe.width || width;
+              height = videoProbe.height || height;
+            }
+
             // If file has no video stream, treat as audio
             if (!hasVideo && hasAudio) {
               type = 'audio';
@@ -321,6 +374,19 @@ const App: React.FC = () => {
           }
         } catch (err) {
           console.error('Failed to probe media:', err);
+          // Try fallback probing
+          try {
+            const videoProbe = await probeMediaWithVideoElement(filePath);
+            hasVideo = videoProbe.hasVideo;
+            duration = videoProbe.duration;
+            width = videoProbe.width || width;
+            height = videoProbe.height || height;
+            if (!hasVideo) {
+              type = 'audio';
+            }
+          } catch {
+            // Keep defaults
+          }
         }
       }
 
