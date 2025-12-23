@@ -13,6 +13,8 @@ export interface MediaItem {
   waveform?: number[];
   size: number;
   dateAdded: Date;
+  hasVideo?: boolean; // Does the file contain a video stream
+  hasAudio?: boolean; // Does the file contain an audio stream
 }
 
 export interface Clip {

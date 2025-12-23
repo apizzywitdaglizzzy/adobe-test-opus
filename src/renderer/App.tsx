@@ -285,11 +285,43 @@ const App: React.FC = () => {
     for (const filePath of paths) {
       const ext = filePath.split('.').pop()?.toLowerCase() || '';
       let type: MediaItem['type'] = 'video';
+      let hasVideo = true;
+      let hasAudio = true;
+      let duration = 10;
+      let width = 1920;
+      let height = 1080;
+      let frameRate = 30;
 
+      // Determine initial type from extension
       if (['mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a'].includes(ext)) {
         type = 'audio';
+        hasVideo = false;
       } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff'].includes(ext)) {
         type = 'image';
+        hasAudio = false;
+        duration = 5;
+      }
+
+      // For video files, probe to detect actual streams
+      if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv'].includes(ext)) {
+        try {
+          const probeResult = await ipcRenderer.invoke('probe-media', filePath);
+          if (probeResult.success) {
+            hasVideo = probeResult.hasVideo;
+            hasAudio = probeResult.hasAudio;
+            duration = probeResult.duration || 10;
+            width = probeResult.width || 1920;
+            height = probeResult.height || 1080;
+            frameRate = probeResult.frameRate || 30;
+
+            // If file has no video stream, treat as audio
+            if (!hasVideo && hasAudio) {
+              type = 'audio';
+            }
+          }
+        } catch (err) {
+          console.error('Failed to probe media:', err);
+        }
       }
 
       const fileInfo = await ipcRenderer.invoke('get-file-info', filePath);
@@ -299,12 +331,15 @@ const App: React.FC = () => {
         name: filePath.split('/').pop() || filePath.split('\\').pop() || 'Untitled',
         type,
         path: filePath,
-        duration: type === 'image' ? 5 : 10, // Default duration, would be read from file
-        width: 1920,
-        height: 1080,
-        frameRate: 30,
+        duration,
+        width,
+        height,
+        frameRate,
         size: fileInfo.success ? fileInfo.info.size : 0,
         dateAdded: new Date(),
+        // Store stream info for later use
+        hasVideo,
+        hasAudio,
       };
 
       newMedia.push(media);
@@ -476,8 +511,12 @@ const App: React.FC = () => {
     (mediaItem: MediaItem, trackId?: string) => {
       if (!activeSequence) return;
 
-      // For video files, we split into separate video and audio clips
-      if (mediaItem.type === 'video') {
+      // Check if this is a video file with actual video stream
+      const hasVideoStream = mediaItem.hasVideo !== false; // Default to true if not set
+      const hasAudioStream = mediaItem.hasAudio !== false; // Default to true if not set
+
+      // For video files with video stream, we split into separate video and audio clips
+      if (mediaItem.type === 'video' && hasVideoStream) {
         const videoTrack = activeSequence.tracks.find((t) => t.type === 'video');
         const audioTrack = activeSequence.tracks.find((t) => t.type === 'audio');
 
@@ -493,7 +532,7 @@ const App: React.FC = () => {
         );
 
         const videoClipId = uuidv4();
-        const audioClipId = uuidv4();
+        const audioClipId = hasAudioStream ? uuidv4() : undefined;
 
         // Create video clip
         const videoClip: Clip = {
@@ -515,41 +554,47 @@ const App: React.FC = () => {
           locked: false,
           enabled: true,
           color: '#4a9eff',
-          linkedClipId: audioClipId, // Link to audio clip
-        };
-
-        // Create linked audio clip
-        const audioClip: Clip = {
-          id: audioClipId,
-          mediaId: mediaItem.id,
-          trackId: audioTrack.id,
-          name: `${mediaItem.name} (Audio)`,
-          type: 'audio',
-          startTime: lastVideoClipEnd, // Same start time as video
-          duration: mediaItem.duration,
-          inPoint: 0,
-          outPoint: mediaItem.duration,
-          speed: 1,
-          volume: 1,
-          gain: 0,
-          opacity: 1,
-          effects: [],
-          transitions: {},
-          locked: false,
-          enabled: true,
-          color: '#4caf50',
-          linkedClipId: videoClipId, // Link to video clip
+          linkedClipId: audioClipId, // Link to audio clip if exists
         };
 
         const updatedTracks = activeSequence.tracks.map((track) => {
           if (track.id === videoTrack.id) {
             return { ...track, clips: [...track.clips, videoClip] };
           }
-          if (track.id === audioTrack.id) {
-            return { ...track, clips: [...track.clips, audioClip] };
-          }
           return track;
         });
+
+        // Only create audio clip if file has audio stream
+        if (hasAudioStream && audioClipId) {
+          const audioClip: Clip = {
+            id: audioClipId,
+            mediaId: mediaItem.id,
+            trackId: audioTrack.id,
+            name: `${mediaItem.name} (Audio)`,
+            type: 'audio',
+            startTime: lastVideoClipEnd, // Same start time as video
+            duration: mediaItem.duration,
+            inPoint: 0,
+            outPoint: mediaItem.duration,
+            speed: 1,
+            volume: 1,
+            gain: 0,
+            opacity: 1,
+            effects: [],
+            transitions: {},
+            locked: false,
+            enabled: true,
+            color: '#4caf50',
+            linkedClipId: videoClipId, // Link to video clip
+          };
+
+          // Add audio clip to audio track
+          updatedTracks.forEach((track, index) => {
+            if (track.id === audioTrack.id) {
+              updatedTracks[index] = { ...track, clips: [...track.clips, audioClip] };
+            }
+          });
+        }
 
         const newDuration = Math.max(
           activeSequence.duration,

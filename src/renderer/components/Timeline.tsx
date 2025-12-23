@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { Sequence, Track, Clip, MediaItem, EditorState, TransitionType, Transition } from '../../types';
+import { Sequence, Track, Clip, MediaItem, EditorState, Transition } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TimelineProps {
@@ -67,7 +67,15 @@ const Timeline: React.FC<TimelineProps> = ({
   const [dropTargetClip, setDropTargetClip] = useState<{ clipId: string; position: 'in' | 'out' } | null>(null);
 
   const pixelsPerSecond = PIXELS_PER_SECOND * zoom;
-  const duration = sequence?.duration || 300;
+
+  // Calculate actual content duration from clips
+  const contentDuration = sequence?.tracks.reduce((maxEnd, track) => {
+    const trackEnd = track.clips.reduce((max, clip) => Math.max(max, clip.startTime + clip.duration), 0);
+    return Math.max(maxEnd, trackEnd);
+  }, 0) || 0;
+
+  // Timeline always extends beyond content - minimum 60 seconds or content + 60 seconds buffer
+  const duration = Math.max(60, contentDuration + 60, sequence?.duration || 0);
   const timelineWidth = duration * pixelsPerSecond;
 
   const timeToPixels = (time: number) => time * pixelsPerSecond;
@@ -134,7 +142,35 @@ const Timeline: React.FC<TimelineProps> = ({
         const newStartTime = Math.max(0, dragStartTime + deltaTime);
         const clip = sequence?.tracks.flatMap((t) => t.clips).find((c) => c.id === dragClipId);
         if (clip) {
-          onClipMove(dragClipId, snapping ? Math.round(newStartTime * 10) / 10 : newStartTime, clip.trackId);
+          // Calculate which track the mouse is over
+          const tracksContainer = tracksContainerRef.current;
+          if (tracksContainer) {
+            const containerRect = tracksContainer.getBoundingClientRect();
+            const mouseY = e.clientY - containerRect.top + tracksContainer.scrollTop;
+
+            // Find which track the mouse is over
+            let accumulatedHeight = 0;
+            let targetTrackId = clip.trackId;
+
+            for (const track of sequence?.tracks || []) {
+              const trackHeight = track.height + 8; // Include button row height
+              if (mouseY >= accumulatedHeight && mouseY < accumulatedHeight + trackHeight) {
+                // Check if track types are compatible
+                if ((clip.type === 'video' && track.type === 'video') ||
+                    (clip.type === 'audio' && track.type === 'audio') ||
+                    (clip.type === 'subtitle' && track.type === 'subtitle') ||
+                    (clip.type === 'image' && track.type === 'video')) {
+                  targetTrackId = track.id;
+                }
+                break;
+              }
+              accumulatedHeight += trackHeight;
+            }
+
+            onClipMove(dragClipId, snapping ? Math.round(newStartTime * 10) / 10 : newStartTime, targetTrackId);
+          } else {
+            onClipMove(dragClipId, snapping ? Math.round(newStartTime * 10) / 10 : newStartTime, clip.trackId);
+          }
         }
       } else if ((dragType === 'resize-left' || dragType === 'resize-right') && dragClipId) {
         const clip = sequence?.tracks.flatMap((t) => t.clips).find((c) => c.id === dragClipId);

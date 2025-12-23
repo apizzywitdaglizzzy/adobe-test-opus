@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { exec } from 'child_process';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -413,6 +414,69 @@ ipcMain.handle('get-file-info', async (_, filePath) => {
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
+});
+
+// Probe media file to detect video/audio streams and duration
+ipcMain.handle('probe-media', async (_, filePath: string) => {
+  return new Promise((resolve) => {
+    // Try ffprobe first
+    const ffprobeCmd = `ffprobe -v quiet -print_format json -show_format -show_streams "${filePath}"`;
+
+    exec(ffprobeCmd, (error, stdout) => {
+      if (error) {
+        // ffprobe not available - return basic info based on extension
+        const ext = path.extname(filePath).toLowerCase();
+        const isAudioOnly = ['.mp3', '.wav', '.aac', '.ogg', '.flac', '.m4a'].includes(ext);
+        resolve({
+          success: true,
+          hasVideo: !isAudioOnly,
+          hasAudio: true,
+          duration: 10, // Default duration
+          width: isAudioOnly ? 0 : 1920,
+          height: isAudioOnly ? 0 : 1080,
+          frameRate: 30,
+          probeFailed: true,
+        });
+        return;
+      }
+
+      try {
+        const probeData = JSON.parse(stdout);
+        const streams = probeData.streams || [];
+        const format = probeData.format || {};
+
+        const videoStream = streams.find((s: { codec_type: string }) => s.codec_type === 'video');
+        const audioStream = streams.find((s: { codec_type: string }) => s.codec_type === 'audio');
+
+        const hasVideo = !!videoStream && videoStream.codec_name !== 'mjpeg'; // Ignore cover art
+        const hasAudio = !!audioStream;
+        const duration = parseFloat(format.duration) || 10;
+
+        resolve({
+          success: true,
+          hasVideo,
+          hasAudio,
+          duration,
+          width: videoStream ? parseInt(videoStream.width) || 1920 : 0,
+          height: videoStream ? parseInt(videoStream.height) || 1080 : 0,
+          frameRate: videoStream ? eval(videoStream.r_frame_rate) || 30 : 30,
+          probeFailed: false,
+        });
+      } catch (parseError) {
+        resolve({
+          success: false,
+          error: 'Failed to parse ffprobe output',
+          hasVideo: true,
+          hasAudio: true,
+          duration: 10,
+          width: 1920,
+          height: 1080,
+          frameRate: 30,
+          probeFailed: true,
+        });
+      }
+    });
+  });
 });
 
 // App lifecycle
