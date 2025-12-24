@@ -25,6 +25,26 @@ interface TimelineProps {
 const PIXELS_PER_SECOND = 100;
 const TRACK_HEADER_WIDTH = 150;
 
+// Seeded pseudo-random number generator for stable waveforms
+const seededRandom = (seed: number): number => {
+  const x = Math.sin(seed * 9999) * 10000;
+  return x - Math.floor(x);
+};
+
+// Generate stable waveform data for a clip
+const generateWaveform = (clipId: string, numBars: number): number[] => {
+  const waveform: number[] = [];
+  let seed = 0;
+  for (let i = 0; i < clipId.length; i++) {
+    seed += clipId.charCodeAt(i);
+  }
+  for (let i = 0; i < numBars; i++) {
+    const height = seededRandom(seed + i) * 30 + 5;
+    waveform.push(height);
+  }
+  return waveform;
+};
+
 // Transition color mapping
 const TRANSITION_COLORS: Record<string, string> = {
   dissolve: '#8b5cf6',
@@ -74,8 +94,8 @@ const Timeline: React.FC<TimelineProps> = ({
     return Math.max(maxEnd, trackEnd);
   }, 0) || 0;
 
-  // Timeline always extends beyond content - minimum 60 seconds or content + 60 seconds buffer
-  const duration = Math.max(60, contentDuration + 60, sequence?.duration || 0);
+  // Timeline extends indefinitely - minimum 5 minutes (300s) or content + 2 minutes buffer
+  const duration = Math.max(300, contentDuration + 120, sequence?.duration || 0);
   const timelineWidth = duration * pixelsPerSecond;
 
   const timeToPixels = (time: number) => time * pixelsPerSecond;
@@ -344,23 +364,39 @@ const Timeline: React.FC<TimelineProps> = ({
         }}
         onMouseDown={(e) => handleClipMouseDown(e, clip, 'move')}
       >
-        {/* Transition drop zones */}
+        {/* Transition drop zones - larger for easier dropping */}
         <div
-          className={`absolute left-0 top-0 bottom-0 w-8 z-20 transition-colors ${
-            isInDropTarget ? 'bg-purple-500/50' : 'hover:bg-purple-500/20'
+          className={`absolute left-0 top-0 bottom-0 w-12 z-30 transition-colors cursor-copy ${
+            isInDropTarget ? 'bg-purple-500/60 border-l-4 border-purple-400' : 'hover:bg-purple-500/30'
           }`}
+          onMouseDown={(e) => e.stopPropagation()} // Prevent clip drag when hovering drop zone
           onDragOver={(e) => handleTransitionDragOver(e, clip.id, 'in')}
+          onDragEnter={(e) => handleTransitionDragOver(e, clip.id, 'in')}
           onDragLeave={handleTransitionDragLeave}
           onDrop={(e) => handleTransitionDrop(e, clip.id, 'in')}
-        />
+        >
+          {isInDropTarget && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-white text-xs font-bold">IN</span>
+            </div>
+          )}
+        </div>
         <div
-          className={`absolute right-0 top-0 bottom-0 w-8 z-20 transition-colors ${
-            isOutDropTarget ? 'bg-purple-500/50' : 'hover:bg-purple-500/20'
+          className={`absolute right-0 top-0 bottom-0 w-12 z-30 transition-colors cursor-copy ${
+            isOutDropTarget ? 'bg-purple-500/60 border-r-4 border-purple-400' : 'hover:bg-purple-500/30'
           }`}
+          onMouseDown={(e) => e.stopPropagation()} // Prevent clip drag when hovering drop zone
           onDragOver={(e) => handleTransitionDragOver(e, clip.id, 'out')}
+          onDragEnter={(e) => handleTransitionDragOver(e, clip.id, 'out')}
           onDragLeave={handleTransitionDragLeave}
           onDrop={(e) => handleTransitionDrop(e, clip.id, 'out')}
-        />
+        >
+          {isOutDropTarget && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-white text-xs font-bold">OUT</span>
+            </div>
+          )}
+        </div>
 
         {/* In Transition indicator */}
         {hasInTransition && (
@@ -412,19 +448,16 @@ const Timeline: React.FC<TimelineProps> = ({
           {showWaveforms && clip.type === 'audio' && (
             <div className="absolute inset-0 flex items-center justify-center opacity-50">
               <svg className="w-full h-full" viewBox="0 0 100 40" preserveAspectRatio="none">
-                {Array.from({ length: 50 }).map((_, i) => {
-                  const height = Math.random() * 30 + 5;
-                  return (
-                    <rect
-                      key={i}
-                      x={i * 2}
-                      y={(40 - height) / 2}
-                      width="1.5"
-                      height={height}
-                      fill="currentColor"
-                    />
-                  );
-                })}
+                {generateWaveform(clip.id, 50).map((height, i) => (
+                  <rect
+                    key={i}
+                    x={i * 2}
+                    y={(40 - height) / 2}
+                    width="1.5"
+                    height={height}
+                    fill="currentColor"
+                  />
+                ))}
               </svg>
             </div>
           )}
